@@ -1,0 +1,30 @@
+# Core dependencies for AgentSocket server
+aiohttp==3.9.1
+python-socketio[client]==5.10.0
+
+# Data handling and utilities
+python-dateutil==2.8.2
+
+# Logging and debugging
+coloredlogs==15.0.1
+
+# Development dependencies
+pytest==7.4.3
+pytest-asyncio==0.21.1
+black==23.11.0
+flake8==6.1.0
+
+# Optional: AI/ML integration (uncomment as needed)
+# openai==1.3.7
+# anthropic==0.7.8
+
+# Optional: Speech processing (uncomment as needed)
+# speech-recognition==3.10.0
+# pydub==0.25.1
+
+# Optional: Image/video processing (uncomment as needed)
+# Pillow==10.1.0
+# opencv-python==4.8.1.78
+
+# Optional: Additional async support (uncomment as needed)
+# asyncio-mqtt==0.16.1
