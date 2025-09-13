@@ -10,9 +10,11 @@ except ImportError:
 
 try:
     from data_types import (
-        MessageType, IncomingMessage, OutgoingAction,
-        AppState, CommandHistory, LLMContext, LLMResponse, MessageFactory,
-        ActionFactory, serialize_dataclass
+        MessageType, IncomingMessage, OutgoingAction, ActionType, AppMode,
+        AppState, CommandHistory, LLMContext, LLMResponse,
+        create_incoming_message, create_tts_action, create_play_song_action,
+        create_play_video_action, create_visual_action, create_error_action,
+        serialize_dataclass
     )
 except ImportError:
     print("data_types.py not found. Make sure it's in the same directory.")
@@ -24,6 +26,10 @@ logger = logging.getLogger(__name__)
 
 class AgentSocket:
     """Main socket class for handling all smart glasses communication"""
+    
+    # Define available actions and modes using our types
+    AVAILABLE_ACTIONS: list[ActionType] = ["tts", "play_song", "play_video", "create_visual", "change_mode", "acknowledge"]
+    AVAILABLE_MODES: list[AppMode] = ["sheep", "youtube", "conversational", "visual_story", "zzz"]
 
     def __init__(self, host: str = "localhost", port: int = 5000) -> None:
         self.host = host
@@ -74,8 +80,11 @@ class AgentSocket:
         try:
             logger.info(f"Received {message_type}: {raw_data}")
 
+            # Print last 3 messages from history to show it's working
+            self._print_recent_history(3)
+
             # Create typed incoming message
-            incoming_message = MessageFactory.create_incoming_message(
+            incoming_message = create_incoming_message(
                 message_type=message_type,
                 raw_data=raw_data,
                 session_id=sid
@@ -104,7 +113,7 @@ class AgentSocket:
 
         except Exception as e:
             logger.error(f"Error handling {message_type}: {e}")
-            error_action = ActionFactory.create_tts_action(
+            error_action = create_error_action(
                 f"Sorry, I encountered an error processing that request: {str(e)}"
             )
             await self._send_action(sid, error_action)
@@ -119,8 +128,8 @@ class AgentSocket:
             current_message=incoming_message,
             app_state=self.app_state,
             recent_history=recent_history,
-            available_actions=["tts", "play_song", "play_video", "create_visual", "change_mode", "acknowledge"],
-            available_modes=["sheep", "youtube", "conversational", "visual_story", "zzz"],
+            available_actions=self.AVAILABLE_ACTIONS,
+            available_modes=self.AVAILABLE_MODES,
             session_info={
                 'session_duration': self._calculate_session_duration(),
                 'total_commands': len(self.app_state.command_history)
@@ -163,24 +172,24 @@ class AgentSocket:
 
             # Simple routing based on keywords (replace with LLM logic)
             if "play music" in speech_text.lower() or "song" in speech_text.lower():
-                actions.append(ActionFactory.create_play_song_action("Default Song"))
+                actions.append(create_play_song_action("Default Song"))
             elif "video" in speech_text.lower() or "watch" in speech_text.lower():
-                actions.append(ActionFactory.create_play_video_action("https://example.com/video"))
+                actions.append(create_play_video_action("https://example.com/video"))
             elif "picture" in speech_text.lower() or "visual" in speech_text.lower():
-                actions.append(ActionFactory.create_visual_action(speech_text))
+                actions.append(create_visual_action(speech_text))
             else:
-                actions.append(ActionFactory.create_tts_action(
+                actions.append(create_tts_action(
                     f"I heard you say: {speech_text} in {current_mode} mode"
                 ))
 
         elif message_type == "done_command":
             command_id = raw_data.get("command_id", "unknown")
-            actions.append(ActionFactory.create_tts_action(
+            actions.append(create_tts_action(
                 f"Command {command_id} completed successfully"
             ))
 
         elif message_type == "done_story":
-            actions.append(ActionFactory.create_tts_action(
+            actions.append(create_tts_action(
                 "Story finished! What would you like to do next?"
             ))
 
@@ -230,25 +239,45 @@ class AgentSocket:
     # Public methods for sending specific actions (if needed from external code)
     async def send_tts(self, sid: str, speech: str, **kwargs: Any) -> None:
         """Send TTS action"""
-        action = ActionFactory.create_tts_action(speech, **kwargs)
+        action = create_tts_action(speech, **kwargs)
         await self._send_action(sid, action)
 
     async def send_play_song(self, sid: str, song_title: str, **kwargs: Any) -> None:
         """Send play song action"""
-        action = ActionFactory.create_play_song_action(song_title, **kwargs)
+        action = create_play_song_action(song_title, **kwargs)
         await self._send_action(sid, action)
 
     async def send_play_video(self, sid: str, video_url: str, **kwargs: Any) -> None:
         """Send play video action"""
-        action = ActionFactory.create_play_video_action(video_url, **kwargs)
+        action = create_play_video_action(video_url, **kwargs)
         await self._send_action(sid, action)
 
     async def send_create_visual(self, sid: str, visual_prompt: str, **kwargs: Any) -> None:
         """Send create visual action"""
-        action = ActionFactory.create_visual_action(visual_prompt, **kwargs)
+        action = create_visual_action(visual_prompt, **kwargs)
         await self._send_action(sid, action)
 
     # Utility methods
+    def _print_recent_history(self, limit: int = 3) -> None:
+        """Print the last N messages from command history"""
+        if not self.app_state.command_history:
+            logger.info("=== Command History (empty) ===")
+            return
+
+        recent_commands = self.app_state.command_history[-limit:]
+        logger.info(f"=== Last {len(recent_commands)} Commands ===")
+
+        for i, cmd in enumerate(recent_commands, 1):
+            timestamp = cmd.timestamp
+            command_type = cmd.command_type
+            mode = cmd.mode
+            data_summary = str(cmd.data)[:100] + "..." if len(str(cmd.data)) > 100 else str(cmd.data)
+
+            logger.info(f"{i}. [{timestamp}] {command_type} (mode: {mode})")
+            logger.info(f"   Data: {data_summary}")
+
+        logger.info("=== End History ===")
+
     def get_app_state(self) -> Any:
         """Get current application state as dictionary"""
         return serialize_dataclass(self.app_state)
@@ -312,7 +341,7 @@ class AgentSocket:
 
         data = await request.json()
         new_mode = data.get('mode')
-        if new_mode in ["sheep", "youtube", "conversational", "visual_story", "zzz"]:
+        if new_mode in self.AVAILABLE_MODES:
             self.app_state.current_mode = new_mode
             return web.json_response({"mode": self.app_state.current_mode})
         else:
