@@ -8,6 +8,7 @@ python-socketio==5.10.0
 # Data handling and utilities
 python-dateutil==2.8.2
 python-dotenv
+numpy
 
 # Logging and debugging
 coloredlogs==15.0.1
@@ -15,7 +16,6 @@ coloredlogs==15.0.1
 # Speech processing (for microphone input)
 sounddevice==0.4.6
 soundfile==0.12.1
-numpy==1.26.2
 webrtcvad-wheels
 
 # Optional: If you plan to add AI/ML integration

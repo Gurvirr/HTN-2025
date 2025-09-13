@@ -8,12 +8,19 @@ import collections
 import webrtcvad
 import sounddevice as sd
 import soundfile as sf
-import numpy as np
 import aiohttp
+import numpy as np
+import random
 from dotenv import load_dotenv
+from tts import TTSManager, VOICES
 
 # Load environment variables from .env file
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
+
+# Check for required environment variables
+if not os.getenv("GROQ_API_KEY"):
+    print("Warning: GROQ_API_KEY is not set in .env file. TTS will not work.", file=sys.stderr)
+    print("Get a free API key at https://console.groq.com", file=sys.stderr)
 
 # --- Configuration ---
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -22,7 +29,7 @@ MODEL = "whisper-large-v3"
 SAMPLE_RATE = 16000
 CHANNELS = 1
 
-async def transcribe(audio_path: str, language: str):
+async def transcribe(audio_path: str, language: str, args):
     """Sends the audio file to Groq for transcription, specifying the language."""
     if not GROQ_API_KEY:
         print("Error: GROQ_API_KEY is not set.", file=sys.stderr)
@@ -51,6 +58,19 @@ async def transcribe(audio_path: str, language: str):
                     # Handle the case where the API returns an empty string for silence
                     if transcript is not None and transcript.strip():
                         print(f">>> {transcript}")
+
+                        # Generate a response using local function
+                        response_text = generate_response(transcript)
+                        print(f"<<< {response_text}")
+
+                        # Only attempt TTS if not disabled
+                        if not args.disable_tts:
+                            try:
+                                # Initialize TTS and speak the response
+                                tts = TTSManager(voice=args.tts_voice)
+                                await tts.speak(response_text)
+                            except Exception as tts_error:
+                                print(f"TTS error occurred but continuing: {tts_error}", file=sys.stderr)
                     else:
                         # If transcript is empty or just whitespace, do nothing.
                         print("Transcription empty, likely silence.", file=sys.stderr)
@@ -58,6 +78,85 @@ async def transcribe(audio_path: str, language: str):
 
     except Exception as e:
         print(f"An unexpected error occurred: {e}", file=sys.stderr)
+
+def generate_response(transcript: str) -> str:
+    """Generate a natural-sounding response based on the detected intent.
+
+    Args:
+        transcript (str): The detected user intent or transcribed text
+
+    Returns:
+        str: A natural-sounding response text
+    """
+    # Map of patterns to friendly responses
+    transcript_lower = transcript.lower().strip()
+
+    # Greeting patterns
+    if any(greeting in transcript_lower for greeting in ["hello", "hi", "hey", "greetings"]):
+        responses = [
+            "Hello there! How can I assist you today?",
+            "Hi! I'm your AI assistant. What can I do for you?",
+            "Hey! It's great to talk with you. How can I help?"
+        ]
+        return random.choice(responses)
+
+    # Questions about capabilities
+    elif any(phrase in transcript_lower for phrase in ["what can you do", "help me with", "your capabilities"]):
+        return "I can help with answering questions, providing information, or just having a conversation. What would you like to talk about?"
+
+    # Weather-related
+    elif "weather" in transcript_lower:
+        responses = [
+            "I don't have real-time weather data, but I'd be happy to discuss other topics!",
+            "I can't check the weather right now, but I'm here to chat about other things.",
+            "While I can't access weather information, I can help with many other questions you might have."
+        ]
+        return random.choice(responses)
+
+    # Time-related
+    elif "time" in transcript_lower:
+        responses = [
+            "I don't have access to the current time, but I'm still here to help with other questions!",
+            "I can't tell you the exact time, but I'm ready to assist with other topics.",
+            "While I can't check the time for you, I'd be happy to chat about something else."
+        ]
+        return random.choice(responses)
+
+    # Feelings/emotions
+    elif any(phrase in transcript_lower for phrase in ["how are you", "how do you feel", "are you well"]):
+        responses = [
+            "I'm doing well, thanks for asking! How about you?",
+            "I'm operating normally and ready to help. How are you today?",
+            "I'm great! It's nice of you to ask. How can I assist you?"
+        ]
+        return random.choice(responses)
+
+    # Thanks
+    elif any(phrase in transcript_lower for phrase in ["thank you", "thanks", "appreciate it"]):
+        responses = [
+            "You're welcome! Is there anything else I can help with?",
+            "Happy to help! Let me know if you need anything else.",
+            "No problem at all! What else would you like to talk about?"
+        ]
+        return random.choice(responses)
+
+    # Goodbye
+    elif any(phrase in transcript_lower for phrase in ["goodbye", "bye", "see you", "talk to you later"]):
+        responses = [
+            "Goodbye! Feel free to chat again anytime.",
+            "See you later! It was nice talking with you.",
+            "Take care! I'll be here if you need me again."
+        ]
+        return random.choice(responses)
+
+    # Default responses for unrecognized inputs
+    else:
+        responses = [
+            f"I heard you say: '{transcript}'. How can I help with that?",
+            f"I understood you said: '{transcript}'. What would you like to know about this?",
+            f"You mentioned: '{transcript}'. Could you tell me more about what you're looking for?"
+        ]
+        return random.choice(responses)
 
 def record_with_vad(args):
     """Records from the microphone using VAD and returns a filepath or None if silent."""
@@ -129,6 +228,8 @@ async def main():
     vad_group.add_argument("--energy-threshold", type=float, default=50.0, help="RMS energy threshold to consider audio as non-silent.")
 
     parser.add_argument("--language", type=str, default="en", help="Language of the speech (ISO 639-1 code).")
+    parser.add_argument("--tts-voice", type=str, default="Arista-PlayAI", help="Voice to use for TTS responses (e.g. Arista-PlayAI, Fritz-PlayAI).")
+    parser.add_argument("--disable-tts", action="store_true", help="Disable TTS responses and use text-only mode.")
 
     args = parser.parse_args()
 
@@ -140,7 +241,7 @@ async def main():
                 try:
                     temp_audio_path = record_with_vad(args)
                     if temp_audio_path:
-                        await transcribe(temp_audio_path, args.language)
+                        await transcribe(temp_audio_path, args.language, args)
                 finally:
                     if temp_audio_path and os.path.exists(temp_audio_path):
                         os.remove(temp_audio_path)
@@ -152,7 +253,7 @@ async def main():
         if not os.path.exists(args.file):
             print(f"Error: Audio file not found at '{args.file}'", file=sys.stderr)
             return
-        await transcribe(args.file, args.language)
+        await transcribe(args.file, args.language, args)
 
 if __name__ == "__main__":
     asyncio.run(main())
