@@ -1,53 +1,97 @@
 # Smart Glasses WebSocket API Documentation
 
 ## Overview
-This document describes the WebSocket messages used for communication between the smart glasses client and the backend server. The server uses Socket.IO for real-time bidirectional communication and includes AI-powered sleep assistance with automatic music/video search capabilities.
+This document describes the WebSocket messages used for communication between the smart glasses client and the backend server. The server uses plain WebSockets with JSON messaging for real-time bidirectional communication and includes AI-powered sleep assistance with automatic music/video search capabilities.
 
 ## Connection
 - **URL**: `ws://localhost:5000` (or your server URL)
-- **Protocol**: Socket.IO
-- **CORS**: Enabled for all origins
+- **Protocol**: Plain WebSocket (RFC 6455)
+- **Message Format**: JSON
+- **Encoding**: UTF-8
 
 ## Message Types
 
 ### 1. Connection Events
 
-#### `connect`
-**Direction**: Client → Server (automatic)
-**Description**: Fired when client connects to server
+#### Connection Established
+**Direction**: Server → Client (automatic)
+**Description**: Sent when client successfully connects to server
 
-**Server Response**: `connection_status`
+**Message Format**:
 ```json
 {
+  "type": "connection",
   "status": "connected",
   "mode": "conversational",
-  "session_id": "SuUeTQL5ytMr0fY7AAAB"
+  "session_id": "12345678"
 }
 ```
 
-#### `disconnect`
-**Direction**: Client → Server (automatic)
-**Description**: Fired when client disconnects
+#### Connection Closed
+**Direction**: Automatic
+**Description**: WebSocket connection closed by either party
 
 ---
 
 ### 2. Incoming Messages (Client → Server)
 
+All client messages must include a `type` field to identify the message type.
+
 #### `receive_speech`
 **Description**: Send speech input from glasses to server. The server will automatically search for music/videos if needed.
-**Required Fields**: `speech`
-**Optional Fields**: Any additional context data
+**Required Fields**: `type`, `speech`
+**Optional Fields**: `mode`, additional context data
 
 ```json
 {
+  "type": "receive_speech",
   "speech": "can you play calm music"
 }
 ```
 
 #### `done_command`
 **Description**: Notify server that a command has been completed
-**Required Fields**: `command_id`
-**Optional Fields**: `status`, `duration`
+**Required Fields**: `type`, `command_id`
+**Optional Fields**: `status`, `execution_time`
+
+```json
+{
+  "type": "done_command",
+  "command_id": "cmd_001",
+  "status": "completed",
+  "execution_time": 1.5
+}
+```
+
+#### `done_story`
+**Description**: Notify server that a story has finished playing
+**Required Fields**: `type`, `story_id`
+**Optional Fields**: `duration`, `user_engagement`
+
+```json
+{
+  "type": "done_story",
+  "story_id": "story_001",
+  "duration": 45.0,
+  "user_engagement": "high"
+}
+```
+
+#### `button_press`
+**Description**: Send button press events from glasses
+**Required Fields**: `type`, `button_type`
+
+```json
+{
+  "type": "button_press",
+  "button_type": "main"
+}
+```
+
+#### `config_update`
+**Description**: Send configuration updates to server
+**Required Fields**: `type`
+**Optional Fields**: Various config parameters
 
 ```json
 {

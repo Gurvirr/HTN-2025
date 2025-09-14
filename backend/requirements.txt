@@ -1,6 +1,5 @@
-# Core web framework and socket.io
-aiohttp==3.9.1
-python-socketio==5.10.0
+# Core WebSocket framework
+websockets==12.0
 
 # Async support
 # asyncio-mqtt==0.16.1

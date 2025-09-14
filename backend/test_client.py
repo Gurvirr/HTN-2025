@@ -1,144 +1,121 @@
-import socketio
 import asyncio
 import json
+import websockets
 import time
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 class TestClient:
-    """Test client for connecting to and testing the AgentSocket server"""
+    """Test client for connecting to and testing the AgentWebSocket server"""
 
     def __init__(self, host: str = "localhost", port: int = 5000):
         self.host = host
         self.port = port
-        self.url = f"http://{host}:{port}"
-        self.sio = socketio.AsyncClient()
+        self.url = f"ws://{host}:{port}"
+        self.websocket: Optional[websockets.WebSocketClientProtocol] = None
         self.connected = False
 
-        # Register event handlers
-        self._register_handlers()
-
-    def _register_handlers(self):
-        """Register socket event handlers"""
-
-        @self.sio.event
-        async def connect():
-            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-            print(f"[{timestamp}] 📥 SOCKET RECV: connect | Connected to server at {self.url}")
+    async def connect(self):
+        """Connect to the WebSocket server"""
+        try:
+            self.websocket = await websockets.connect(self.url)
             self.connected = True
-
-        @self.sio.event
-        async def disconnect():
             timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-            print(f"[{timestamp}] 📥 SOCKET RECV: disconnect | Disconnected from server")
+            print(f"[{timestamp}] 📥 WEBSOCKET RECV: connect | Connected to server at {self.url}")
+            
+            # Start listening for messages
+            asyncio.create_task(self._listen_for_messages())
+            
+        except Exception as e:
+            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+            print(f"[{timestamp}] ❌ Failed to connect: {e}")
             self.connected = False
 
-        @self.sio.event
-        async def connection_status(data):
+    async def disconnect(self):
+        """Disconnect from the WebSocket server"""
+        if self.websocket and self.connected:
+            await self.websocket.close()
+            self.connected = False
             timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-            print(f"[{timestamp}] 📥 SOCKET RECV: connection_status | {data}")
+            print(f"[{timestamp}] 📥 WEBSOCKET RECV: disconnect | Disconnected from server")
 
-        @self.sio.event
-        async def mode_changed(data):
-            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-            print(f"[{timestamp}] 📥 SOCKET RECV: mode_changed | {data}")
-
-        @self.sio.event
-        async def tts(data):
-            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-            print(f"[{timestamp}] 📥 SOCKET RECV: tts | Speech: \"{data.get('data', {}).get('speech', 'N/A')}\"")
-
-        @self.sio.event
-        async def play_song(data):
-            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-            song_title = data.get('data', {}).get('song_title', 'N/A')
-            print(f"[{timestamp}] 📥 SOCKET RECV: play_song | Song: \"{song_title}\"")
-
-        @self.sio.event
-        async def play_video(data):
-            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-            video_url = data.get('data', {}).get('video_url', 'N/A')
-            video_title = data.get('data', {}).get('title', 'N/A')
-            print(f"[{timestamp}] 📥 SOCKET RECV: play_video | Title: \"{video_title}\" | URL: {video_url}")
-
-        @self.sio.event
-        async def create_visual(data):
-            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-            prompt = data.get('data', {}).get('visual_prompt', 'N/A')
-            print(f"[{timestamp}] 📥 SOCKET RECV: create_visual | Prompt: \"{prompt}\"")
-
-        @self.sio.event
-        async def acknowledge(data):
-            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-            message = data.get('data', {}).get('message', 'N/A')
-            print(f"[{timestamp}] 📥 SOCKET RECV: acknowledge | Message: \"{message}\"")
-
-        @self.sio.event
-        async def error(data):
-            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-            error_msg = data.get('data', {}).get('error_message', 'N/A')
-            print(f"[{timestamp}] 📥 SOCKET RECV: error | Error: \"{error_msg}\"")
-
-    async def connect_to_server(self):
-        """Connect to the AgentSocket server"""
+    async def _listen_for_messages(self):
+        """Listen for incoming messages from the server"""
         try:
-            await self.sio.connect(self.url)
-            await asyncio.sleep(1)  # Give connection time to establish
-            return True
+            async for message in self.websocket:
+                await self._handle_message(message)
+        except websockets.exceptions.ConnectionClosed:
+            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+            print(f"[{timestamp}] 📥 WEBSOCKET RECV: disconnect | Connection closed by server")
+            self.connected = False
         except Exception as e:
-            print(f"❌ Failed to connect: {e}")
-            return False
+            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+            print(f"[{timestamp}] ❌ Error listening for messages: {e}")
+            self.connected = False
 
-    async def disconnect_from_server(self):
-        """Disconnect from the server"""
-        if self.connected:
-            await self.sio.disconnect()
+    async def _handle_message(self, raw_message: str):
+        """Handle incoming message from server"""
+        try:
+            data = json.loads(raw_message)
+            message_type = data.get('type', 'unknown')
+            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+            print(f"[{timestamp}] 📥 WEBSOCKET RECV: {message_type} | Data: {data}")
+        except json.JSONDecodeError:
+            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+            print(f"[{timestamp}] ❌ Invalid JSON received: {raw_message}")
+
+    async def send_message(self, message_type: str, data: Dict[str, Any]):
+        """Send a message to the server"""
+        if not self.connected or not self.websocket:
+            print("❌ Not connected to server")
+            return
+
+        message = {
+            "type": message_type,
+            **data
+        }
+
+        try:
+            await self.websocket.send(json.dumps(message))
+            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+            print(f"[{timestamp}] 📤 WEBSOCKET SEND: {message_type} | Data: {data}")
+        except Exception as e:
+            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+            print(f"[{timestamp}] ❌ Failed to send message: {e}")
 
     async def send_speech(self, speech_text: str, mode: str = None):
         """Send a speech message to the server"""
-        if not self.connected:
-            print("❌ Not connected to server")
-            return
-
         data = {"speech": speech_text}
         if mode:
             data["mode"] = mode
-
-        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-        print(f"[{timestamp}] 📤 CLIENT SEND: receive_speech | Speech: \"{speech_text}\"")
-        await self.sio.emit("receive_speech", data)
+        await self.send_message("receive_speech", data)
 
     async def send_done_command(self, command_id: str, status: str = "completed"):
         """Send a command completion message"""
-        if not self.connected:
-            print("❌ Not connected to server")
-            return
-
         data = {
             "command_id": command_id,
             "status": status,
             "execution_time": 1.5
         }
-
-        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-        print(f"[{timestamp}] 📤 CLIENT SEND: done_command | Command: {command_id} - {status}")
-        await self.sio.emit("done_command", data)
+        await self.send_message("done_command", data)
 
     async def send_done_story(self, story_id: str, duration: float = None):
         """Send a story completion message"""
-        if not self.connected:
-            print("❌ Not connected to server")
-            return
-
         data = {
             "story_id": story_id,
             "duration": duration or 30.0,
             "user_engagement": "high"
         }
+        await self.send_message("done_story", data)
 
-        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-        print(f"[{timestamp}] 📤 CLIENT SEND: done_story | Story: {story_id}")
-        await self.sio.emit("done_story", data)
+    async def send_button_press(self, button_type: str):
+        """Send a button press message"""
+        data = {"button_type": button_type}
+        await self.send_message("button_press", data)
+
+    async def send_config_update(self, config: Dict[str, Any]):
+        """Send a config update message"""
+        await self.send_message("config_update", config)
 
     async def run_test_sequence(self):
         """Run a sequence of test messages"""
@@ -189,7 +166,8 @@ class InteractiveTestClient:
         print("=" * 40)
 
         # Connect to server
-        if not await self.client.connect_to_server():
+        await self.client.connect()
+        if not self.client.connected:
             return
 
         try:
@@ -198,10 +176,11 @@ class InteractiveTestClient:
                 print("1. Send speech message")
                 print("2. Send done_command")
                 print("3. Send done_story")
-                print("4. Run automated test sequence")
-                print("5. Exit")
+                print("4. Send button press")
+                print("5. Run automated test sequence")
+                print("6. Exit")
 
-                choice = input("\nEnter choice (1-5): ").strip()
+                choice = input("\nEnter choice (1-6): ").strip()
 
                 if choice == "1":
                     speech = input("Enter speech text: ").strip()
@@ -220,9 +199,13 @@ class InteractiveTestClient:
                     await self.client.send_done_story(story_id, duration_val)
 
                 elif choice == "4":
-                    await self.client.run_test_sequence()
+                    button_type = input("Enter button type (main/secondary/voice): ").strip()
+                    await self.client.send_button_press(button_type or "main")
 
                 elif choice == "5":
+                    await self.client.run_test_sequence()
+
+                elif choice == "6":
                     break
 
                 else:
@@ -234,7 +217,7 @@ class InteractiveTestClient:
             print("\n👋 Exiting...")
 
         finally:
-            await self.client.disconnect_from_server()
+            await self.client.disconnect()
 
 async def main():
     """Main function - choose between automated or interactive testing"""
@@ -243,10 +226,11 @@ async def main():
     if len(sys.argv) > 1 and sys.argv[1] == "--auto":
         # Automated testing
         client = TestClient()
-
-        if await client.connect_to_server():
+        await client.connect()
+        
+        if client.connected:
             await client.run_test_sequence()
-            await client.disconnect_from_server()
+            await client.disconnect()
     else:
         # Interactive testing
         interactive_client = InteractiveTestClient()

@@ -1,7 +1,10 @@
 import logging
 import os
+import json
+import asyncio
+import websockets
 from datetime import datetime
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Set
 from dotenv import load_dotenv
 from data_types import (
         MessageType, IncomingMessage, OutgoingAction, ActionType, AppMode,
@@ -12,12 +15,11 @@ from data_types import (
         serialize_dataclass, convert_structured_to_actions
 )
 from dotenv import load_dotenv
-    
 
 try:
-    import socketio
+    import websockets
 except ImportError:
-    print("python-socketio is required. Install with: pip install python-socketio")
+    print("websockets is required. Install with: pip install websockets")
     exit(1)
 
 # Import Pydantic models if available
@@ -42,18 +44,18 @@ except ImportError:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class AgentSocket:
-    """Main socket class for handling all smart glasses communication"""
+class AgentWebSocket:
+    """Main WebSocket class for handling all smart glasses communication"""
     
     # Define available actions and modes using our types
     AVAILABLE_ACTIONS: list[ActionType] = ["tts", "play_song", "play_video", "create_visual", "change_mode", "acknowledge", "config_send"]
     AVAILABLE_MODES: list[AppMode] = ["sheep", "youtube", "conversational", "visual_story", "zzz"]
 
-    def __init__(self, host: str = "localhost", port: int = 5000) -> None:
+    def __init__(self, host: str = "0.0.0.0", port: int = 5000) -> None:
         self.host = host
         self.port = port
-        self.sio = socketio.AsyncServer(cors_allowed_origins="*")
         self.app_state = AppState()
+        self.connected_clients: Set[websockets.WebSocketServerProtocol] = set()
         
         # Initialize Groq client if available
         self.groq_client = None
@@ -68,50 +70,89 @@ class AgentSocket:
         else:
             logger.warning("⚠️  Groq not available. Using placeholder LLM.")
 
-        # Register all socket event handlers
-        self._register_handlers()
-
-    def _register_handlers(self) -> None:
-        """Register all socket message handlers"""
-
-        @self.sio.event
-        async def connect(sid, environ):
-            logger.info(f"Client {sid} connected")
-            self.app_state.active_session_id = sid
-            connection_data = {
-                'status': 'connected',
-                'mode': self.app_state.current_mode,
-                'session_id': sid
-            }
-            await self.sio.emit('connection_status', connection_data, room=sid)
-            logger.info(f"📤 SOCKET SEND → {sid}: connection_status | Data: {connection_data}")
-
-        @self.sio.event
-        async def disconnect(sid):
-            logger.info(f"Client {sid} disconnected")
-            if self.app_state.active_session_id == sid:
+    async def handle_client(self, websocket, path=None):
+        """Handle a new WebSocket client connection"""
+        self.connected_clients.add(websocket)
+        client_id = id(websocket)
+        logger.info(f"Client {client_id} connected")
+        self.app_state.active_session_id = str(client_id)
+        
+        # Send connection acknowledgment
+        connection_data = {
+            'type': 'connection',
+            'status': 'connected',
+            'mode': self.app_state.current_mode,
+            'session_id': str(client_id)
+        }
+        await websocket.send(json.dumps(connection_data))
+        logger.info(f"📤 WEBSOCKET SEND → {client_id}: connection_status | Data: {connection_data}")
+        
+        try:
+            async for message in websocket:
+                await self.handle_message(websocket, message)
+        except websockets.exceptions.ConnectionClosed:
+            logger.info(f"Client {client_id} disconnected")
+        finally:
+            self.connected_clients.discard(websocket)
+            if self.app_state.active_session_id == str(client_id):
                 self.app_state.active_session_id = None
 
-        # Incoming message handlers - all route to single handler
-        @self.sio.event
-        async def receive_speech(sid, data):
-            logger.info(f"📥 SOCKET RECV ← {sid}: receive_speech | Speech: \"{data.get('speech', 'N/A')}\"")
-            await self._handle_incoming_message(sid, "receive_speech", data)
+    async def handle_message(self, websocket, raw_message):
+        """Handle incoming WebSocket message"""
+        client_id = id(websocket)
+        try:
+            data = json.loads(raw_message)
+            message_type = data.get('type')
+            
+            logger.info(f"📥 WEBSOCKET RECV ← {client_id}: {message_type} | Data: {data}")
+            
+            if message_type == "receive_speech":
+                await self._handle_incoming_message(str(client_id), "receive_speech", data)
+            elif message_type == "done_command":
+                await self._handle_incoming_message(str(client_id), "done_command", data)
+            elif message_type == "button_press":
+                await self._handle_incoming_message(str(client_id), "button_press", data)
+            elif message_type == "config_update":
+                await self._handle_incoming_message(str(client_id), "config_update", data)
+            elif message_type == "mode_change":
+                await self._handle_incoming_message(str(client_id), "mode_change", data)
+            else:
+                logger.warning(f"Unknown message type: {message_type}")
+                
+        except json.JSONDecodeError:
+            logger.error(f"Invalid JSON received from client {client_id}: {raw_message}")
+        except Exception as e:
+            logger.error(f"Error handling message from client {client_id}: {e}")
 
-        @self.sio.event
-        async def done_command(sid, data):
-            logger.info(f"📥 SOCKET RECV ← {sid}: done_command | Command: {data.get('command_id', 'N/A')}")
-            await self._handle_incoming_message(sid, "done_command", data)
+    async def send_to_client(self, client_id: str, data: Dict[str, Any]) -> None:
+        """Send data to a specific client"""
+        message = json.dumps(data)
+        for websocket in self.connected_clients:
+            if str(id(websocket)) == client_id:
+                try:
+                    await websocket.send(message)
+                    return
+                except websockets.exceptions.ConnectionClosed:
+                    self.connected_clients.discard(websocket)
+                    break
+        logger.warning(f"Client {client_id} not found or disconnected")
 
-        @self.sio.event
-        async def done_story(sid, data):
-            logger.info(f"📥 SOCKET RECV ← {sid}: done_story | Story: {data.get('story_id', 'N/A')}")
-            await self._handle_incoming_message(sid, "done_story", data)
-
-        @self.sio.event
-        async def config_send(sid, data):
-            logger.info(f"📥 SOCKET RECV ← {sid}: config_send | Config: {data}")
-            await self._handle_incoming_message(sid, "config_send", data)
+    async def broadcast_to_all(self, data: Dict[str, Any]) -> None:
+        """Broadcast data to all connected clients"""
+        if not self.connected_clients:
+            return
+        
+        message = json.dumps(data)
+        disconnected = set()
+        
+        for websocket in self.connected_clients:
+            try:
+                await websocket.send(message)
+            except websockets.exceptions.ConnectionClosed:
+                disconnected.add(websocket)
+        
+        # Remove disconnected clients
+        self.connected_clients -= disconnected
 
     async def _handle_incoming_message(self, sid: str, message_type: MessageType, raw_data: Dict[str, Any]) -> None:
         """
@@ -716,9 +757,9 @@ BEHAVIOR:
         # Update mode if LLM requested it
         if llm_response.new_mode:
             self.app_state.current_mode = llm_response.new_mode
-            mode_data = {'mode': llm_response.new_mode}
-            await self.sio.emit('mode_changed', mode_data, room=sid)
-            logger.info(f"📤 SOCKET SEND → {sid}: mode_changed | Data: {mode_data}")
+            mode_data = {'type': 'mode_changed', 'mode': llm_response.new_mode}
+            await self.send_to_client(sid, mode_data)
+            logger.info(f"📤 WEBSOCKET SEND → {sid}: mode_changed | Data: {mode_data}")
 
         # Update context memory
         if llm_response.context_updates:
@@ -742,9 +783,10 @@ BEHAVIOR:
 
             # Send the action
             action_dict = serialize_dataclass(action)
-            await self.sio.emit(action.action, action_dict, room=sid)
+            action_dict['type'] = action.action
+            await self.send_to_client(sid, action_dict)
 
-            logger.info(f"📤 SOCKET SEND → {sid}: {action.action} | Data: {action_dict}")
+            logger.info(f"📤 WEBSOCKET SEND → {sid}: {action.action} | Data: {action_dict}")
 
         except Exception as e:
             logger.error(f"Error sending action {action.action}: {e}")
@@ -812,83 +854,36 @@ BEHAVIOR:
         recent_commands = self.app_state.command_history[-limit:]
         return [serialize_dataclass(cmd) for cmd in recent_commands]
 
-    async def run(self):
-        """Run the socket server"""
-        try:
-            from aiohttp import web
-        except ImportError:
-            print("aiohttp is required. Install with: pip install aiohttp")
-            exit(1)
-
-        # Create aiohttp app
-        app = web.Application()
-
-        # Add HTTP endpoints for debugging/monitoring
-        app.router.add_get('/health', self._health_check)
-        app.router.add_get('/state', self._get_state)
-        app.router.add_get('/history', self._get_history)
-        app.router.add_post('/mode', self._set_mode)
-
-        # Attach socket.io to the app
-        self.sio.attach(app)
-
-        logger.info(f"Starting AgentSocket server on {self.host}:{self.port}")
-        return app
-
-    # HTTP endpoint handlers
-    async def _health_check(self, request: Any) -> Any:
-        """Health check endpoint"""
-        from aiohttp import web
-
-        return web.json_response({
-            "status": "healthy",
-            "mode": self.app_state.current_mode,
-            "active_session": self.app_state.active_session_id is not None,
-            "uptime": self._calculate_session_duration()
-        })
-
-    async def _get_state(self, request: Any) -> Any:
-        """Get current state endpoint"""
-        from aiohttp import web
-
-        return web.json_response(self.get_app_state())
-
-    async def _get_history(self, request: Any) -> Any:
-        """Get command history endpoint"""
-        from aiohttp import web
-
-        limit = int(request.query.get('limit', 10))
-        return web.json_response(self.get_command_history(limit))
-
-    async def _set_mode(self, request: Any) -> Any:
-        """Set mode endpoint"""
-        from aiohttp import web
-
-        data = await request.json()
-        new_mode = data.get('mode')
-        if new_mode in self.AVAILABLE_MODES:
-            self.app_state.current_mode = new_mode
-            return web.json_response({"mode": self.app_state.current_mode})
-        else:
-            return web.json_response({"error": "Invalid mode"}, status=400)
+    async def start_server(self):
+        """Start the WebSocket server"""
+        logger.info(f"Starting AgentWebSocket server on {self.host}:{self.port}")
+        
+        # Start WebSocket server
+        server = await websockets.serve(
+            self.handle_client,
+            self.host,
+            self.port,
+            ping_interval=20,
+            ping_timeout=10
+        )
+        
+        logger.info(f"✅ WebSocket server running on ws://{self.host}:{self.port}")
+        return server
 
 # Global instance
-agent_socket = AgentSocket()
+agent_websocket = AgentWebSocket()
 
-async def create_app() -> Any:
-    """Factory function to create the app"""
-    return await agent_socket.run()
+async def main():
+    """Main function to start the WebSocket server"""
+    server = await agent_websocket.start_server()
+    
+    # Keep the server running
+    try:
+        await server.wait_closed()
+    except KeyboardInterrupt:
+        logger.info("Server stopped by user")
+        server.close()
+        await server.wait_closed()
 
 if __name__ == "__main__":
-    try:
-        from aiohttp import web
-    except ImportError:
-        print("aiohttp is required. Install with: pip install aiohttp")
-        exit(1)
-
-    async def init() -> Any:
-        app = await create_app()
-        return app
-
-    # Run the server
-    web.run_app(init(), host="localhost", port=5000)
+    asyncio.run(main())
