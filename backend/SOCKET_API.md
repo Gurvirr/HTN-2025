@@ -409,7 +409,7 @@ The server provides HTTP endpoints for debugging and monitoring:
 - `POST /mode` - Directly set application mode
 
 ## Implementation Notes
-
+z
 1. **Timestamps**: All timestamps are in ISO 8601 format
 2. **Action IDs**: Currently set to `null` but structure supports future tracking
 3. **Config Integration**: TTS actions automatically use current config settings
