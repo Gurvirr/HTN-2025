@@ -4,6 +4,7 @@ import tempfile
 import asyncio
 import aiohttp
 import random
+import re
 from pathlib import Path
 from dotenv import load_dotenv
 import sounddevice as sd
@@ -29,14 +30,7 @@ VOICES = {
 class TTSManager:
     """Manages text-to-speech operations using Groq's TTS API."""
 
-    def __init__(self, model=MODEL, voice=VOICE):
-        self.model = model
-        self.voice = voice
-        self.temp_dir = tempfile.mkdtemp(prefix="groq_tts_")
-
-        # Validate environment
-        if not GROQ_API_KEY:
-            print("Error: GROQ_API_KEY is not set.", file=sys.stderr)
+    # Constructor is now defined above with the speak method
 
     async def generate_speech(self, text: str) -> str:
         """Generates speech from text using Groq's TTS API.
@@ -106,8 +100,35 @@ class TTSManager:
             print(f"An unexpected error occurred: {e}", file=sys.stderr)
             return ""
 
+    def __init__(self, model=MODEL, voice=VOICE):
+        self.model = model
+        self.voice = voice
+        self.temp_dir = tempfile.mkdtemp(prefix="groq_tts_")
+        self.is_playing = False  # Track playback status
+        self.interrupted = False  # Track if playback was interrupted
+
+        # Validate environment
+        if not GROQ_API_KEY:
+            print("Error: GROQ_API_KEY is not set.", file=sys.stderr)
+
+    def stop_playback(self):
+        """Stops any currently playing audio."""
+        try:
+            self.interrupted = True  # Set interrupted flag first
+            if self.is_playing:
+                sd.stop()
+                self.is_playing = False
+                print("Audio playback stopped.", file=sys.stderr)
+                # Force a small delay to ensure audio is fully stopped
+                import time
+                time.sleep(0.1)
+            return True
+        except Exception as e:
+            print(f"Error stopping audio: {e}", file=sys.stderr)
+            return False
+
     async def speak(self, text: str) -> bool:
-        """Generates speech and plays it.
+        """Generates speech and plays it with support for interruptions.
 
         Args:
             text (str): The text to convert to speech and play
@@ -116,23 +137,53 @@ class TTSManager:
             bool: True if successful, False otherwise
         """
         try:
+            # Reset interruption flag
+            self.interrupted = False
+
+            # Preprocess text to be shorter for stories
+            if len(text) > 300 and any(word in text.lower() for word in ["once upon a time", "story", "tale"]):
+                print("Detected story - using shorter format", file=sys.stderr)
+                text = " ".join(text.split()[:100]) + "..."
+
+            # Generate speech for the complete text
+            print(f"Generating speech for text", file=sys.stderr)
             audio_path = await self.generate_speech(text)
             if not audio_path or audio_path == "":
                 print("Could not generate speech audio. See error above.", file=sys.stderr)
                 return False
 
-            # Play the audio file
+            # Play the audio file with interruption checking
             try:
                 data, samplerate = sf.read(audio_path)
+
+                # Calculate duration for logging
+                duration = len(data) / samplerate
+                print(f"Playing audio (duration: {duration:.2f}s)", file=sys.stderr)
+
+                self.is_playing = True
                 sd.play(data, samplerate)
-                sd.wait()  # Wait until audio is finished playing
+
+                # Wait for playback with frequent interruption checks
+                import time
+                start_time = time.time()
+                while sd.get_stream().active and time.time() - start_time < duration + 0.5:
+                    if self.interrupted:
+                        sd.stop()
+                        print("TTS interrupted during playback", file=sys.stderr)
+                        return False
+                    await asyncio.sleep(0.1)  # Small sleep to allow interruption
+
+                self.is_playing = False
                 return True
+
             except Exception as audio_err:
                 print(f"Error playing audio: {audio_err}", file=sys.stderr)
+                self.is_playing = False
                 return False
 
         except Exception as e:
             print(f"Failed to speak: {e}", file=sys.stderr)
+            self.is_playing = False
             return False
 
     def clean_up(self):
