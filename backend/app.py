@@ -1,6 +1,17 @@
 import logging
+import os
 from datetime import datetime
 from typing import Dict, List, Any
+from dotenv import load_dotenv
+from data_types import (
+        MessageType, IncomingMessage, OutgoingAction, ActionType, AppMode,
+        AppState, CommandHistory, LLMContext, LLMResponse,
+        create_incoming_message, create_tts_action, create_play_song_action,
+        create_play_video_action, create_visual_action, create_error_action,
+        serialize_dataclass, convert_structured_to_actions
+)
+from dotenv import load_dotenv
+    
 
 try:
     import socketio
@@ -8,17 +19,22 @@ except ImportError:
     print("python-socketio is required. Install with: pip install python-socketio")
     exit(1)
 
+# Import Pydantic models if available
 try:
-    from data_types import (
-        MessageType, IncomingMessage, OutgoingAction, ActionType, AppMode,
-        AppState, CommandHistory, LLMContext, LLMResponse,
-        create_incoming_message, create_tts_action, create_play_song_action,
-        create_play_video_action, create_visual_action, create_error_action,
-        serialize_dataclass
-    )
+    from data_types import LLMResponse_Structured
+    PYDANTIC_AVAILABLE = LLMResponse_Structured is not None
 except ImportError:
-    print("data_types.py not found. Make sure it's in the same directory.")
-    exit(1)
+    PYDANTIC_AVAILABLE = False
+    LLMResponse_Structured = None
+
+# Import Groq
+try:
+    from groq import Groq
+    GROQ_AVAILABLE = True
+except ImportError:
+    print("groq is required. Install with: pip install groq")
+    GROQ_AVAILABLE = False
+    Groq = None
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -36,6 +52,19 @@ class AgentSocket:
         self.port = port
         self.sio = socketio.AsyncServer(cors_allowed_origins="*")
         self.app_state = AppState()
+        
+        # Initialize Groq client if available
+        self.groq_client = None
+        if GROQ_AVAILABLE:
+            load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
+            api_key = os.environ.get("GROQ_API_KEY")
+            if api_key:
+                self.groq_client = Groq(api_key=api_key)
+                logger.info("✅ Groq client initialized")
+            else:
+                logger.warning("⚠️  GROQ_API_KEY environment variable not set. Using placeholder LLM.")
+        else:
+            logger.warning("⚠️  Groq not available. Using placeholder LLM.")
 
         # Register all socket event handlers
         self._register_handlers()
@@ -150,27 +179,90 @@ class AgentSocket:
 
     async def _process_with_llm(self, context: LLMContext) -> LLMResponse:
         """
-        Process context with LLM and return response
-
-        THIS IS WHERE YOU INTEGRATE YOUR LLM:
-        - Send context to OpenAI/Claude/Local LLM
-        - Get back structured response with actions
-        - Return LLMResponse object
+        Process context with Groq LLM and return response with structured output
         """
+        if self.groq_client and PYDANTIC_AVAILABLE:
+            print("Processing with Groq API")
+            return await self._process_with_groq(context)
+        else:
+            reasons = []
+            if not self.groq_client:
+                reasons.append("no API key")
+            if not PYDANTIC_AVAILABLE:
+                reasons.append("no Pydantic")
+            print(f"Processing with placeholder ({', '.join(reasons)})")
+            return await self._process_with_placeholder(context)
 
-        # TODO: Replace this placeholder with actual LLM integration
+    async def _process_with_groq(self, context: LLMContext) -> LLMResponse:
+        """Process with Groq API using structured output"""
+        try:
+            message_type = context.current_message.message_type
+            raw_data = context.current_message.data
+            current_mode = context.app_state.current_mode
+            
+            # Build the system prompt
+            system_prompt = self._build_system_prompt(context)
+            
+            # Build the user message
+            user_message = self._build_user_message(context)
+            
+            logger.info(f"🤖 Sending to Groq: {user_message[:100]}...")
+            
+            # Call Groq with structured output
+            if LLMResponse_Structured is None:
+                raise Exception("LLMResponse_Structured is not available - Pydantic import failed")
+                
+            completion = self.groq_client.chat.completions.create(
+                model="openai/gpt-oss-120b",  # Model that supports structured outputs
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message}
+                ],
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "smart_glasses_response",
+                        "schema": LLMResponse_Structured.model_json_schema()
+                    }
+                },
+                temperature=0.7,
+                max_tokens=1000
+            )
+            
+            # Parse the structured response
+            response_content = completion.choices[0].message.content
+            logger.info(f"🤖 Groq response: {response_content}")
+            
+            structured_response = LLMResponse_Structured.model_validate_json(response_content)
+            
+            # Convert to our standard LLMResponse format
+            actions = convert_structured_to_actions(structured_response)
+            
+            return LLMResponse(
+                actions=actions,
+                new_mode=structured_response.new_mode,
+                context_updates=structured_response.context_updates,
+                confidence=structured_response.confidence,
+                reasoning=structured_response.reasoning
+            )
+            
+        except Exception as e:
+            logger.error(f"❌ Error processing with Groq: {e}")
+            # Fallback to placeholder
+            return await self._process_with_placeholder(context)
 
+    async def _process_with_placeholder(self, context: LLMContext) -> LLMResponse:
+        """Fallback placeholder logic when Groq is not available"""
         message_type = context.current_message.message_type
         raw_data = context.current_message.data
         current_mode = context.app_state.current_mode
 
-        # Placeholder logic - replace with your LLM call
         actions = []
 
         if message_type == "receive_speech":
             speech_text = raw_data.get("speech", "")
 
-            # Simple routing based on keywords (replace with LLM logic)
+            # Simple routing based on keywords
             if "play music" in speech_text.lower() or "song" in speech_text.lower():
                 actions.append(create_play_song_action("Default Song"))
             elif "video" in speech_text.lower() or "watch" in speech_text.lower():
@@ -196,8 +288,75 @@ class AgentSocket:
         return LLMResponse(
             actions=actions,
             confidence=0.8,
-            reasoning=f"Processed {message_type} in {current_mode} mode"
+            reasoning=f"Processed {message_type} in {current_mode} mode (placeholder)"
         )
+
+    def _build_system_prompt(self, context: LLMContext) -> str:
+        """Build the system prompt for Groq"""
+        available_actions = ", ".join(context.available_actions)
+        available_modes = ", ".join(context.available_modes)
+        
+        return f"""You are an AI assistant for smart glasses. You help users by responding to their speech and commands.
+
+CURRENT CONTEXT:
+- Current mode: {context.app_state.current_mode}
+- Available actions: {available_actions}
+- Available modes: {available_modes}
+- Session duration: {context.session_info.get('session_duration', 0):.1f} seconds
+- Total commands: {context.session_info.get('total_commands', 0)}
+
+RESPONSE FORMAT:
+You must respond with a JSON object containing:
+- actions: Array of action objects, each with "action" (type) and "data" (parameters)
+- new_mode: Optional mode change
+- context_updates: Optional context memory updates
+- confidence: Your confidence level (0.0-1.0)
+- reasoning: Brief explanation of your response
+
+ACTION TYPES AND THEIR DATA:
+- tts: {{"speech": "text to speak", "voice_type": "optional", "speed": 1.0, "volume": 1.0}}
+- play_song: {{"song_title": "song name", "artist": "optional", "playlist": "optional"}}
+- play_video: {{"video_url": "url", "title": "optional", "quality": "optional"}}
+- create_visual: {{"visual_prompt": "description", "style": "optional", "duration": 30}}
+- change_mode: {{"mode": "new_mode"}}
+- acknowledge: {{"message": "acknowledgment"}}
+
+BEHAVIOR:
+- Be helpful and conversational
+- You can return multiple actions in sequence
+- Match the user's energy and context
+- Consider the current mode when responding
+- Use appropriate actions for the request"""
+
+    def _build_user_message(self, context: LLMContext) -> str:
+        """Build the user message for Groq"""
+        message_type = context.current_message.message_type
+        raw_data = context.current_message.data
+        
+        # Include recent history for context
+        history_context = ""
+        if context.recent_history:
+            recent_commands = context.recent_history[-3:]  # Last 3 commands
+            history_context = "\n\nRECENT HISTORY:\n"
+            for i, cmd in enumerate(recent_commands, 1):
+                history_context += f"{i}. {cmd.command_type}: {str(cmd.data)[:100]}\n"
+        
+        if message_type == "receive_speech":
+            speech_text = raw_data.get("speech", "")
+            return f"User said: \"{speech_text}\"{history_context}"
+        
+        elif message_type == "done_command":
+            command_id = raw_data.get("command_id", "unknown")
+            status = raw_data.get("status", "completed")
+            return f"Command '{command_id}' finished with status: {status}{history_context}"
+        
+        elif message_type == "done_story":
+            story_id = raw_data.get("story_id", "unknown")
+            duration = raw_data.get("duration", "unknown")
+            return f"Story '{story_id}' finished (duration: {duration}s){history_context}"
+        
+        else:
+            return f"Received {message_type} with data: {raw_data}{history_context}"
 
     async def _execute_llm_actions(self, sid: str, llm_response: LLMResponse) -> None:
         """Execute all actions returned by the LLM"""

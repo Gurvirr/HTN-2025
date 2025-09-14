@@ -1,6 +1,10 @@
 from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional, Literal, Union
 from datetime import datetime
+try:
+    from pydantic import BaseModel
+except ImportError:
+    BaseModel = None
 
 
 # Message Types
@@ -142,6 +146,18 @@ def create_error_action(error_message: str, error_code: Optional[str] = None) ->
     """Create an error action"""
     return create_action("error", error_message=error_message, error_code=error_code)
 
+def convert_structured_to_actions(structured_response) -> List[OutgoingAction]:
+    """Convert structured LLM response to list of OutgoingAction objects"""
+    if BaseModel and isinstance(structured_response, BaseModel):
+        # It's a Pydantic model, extract the actions
+        return [
+            OutgoingAction(action=action.action, data=action.data)
+            for action in structured_response.actions
+        ]
+    else:
+        # Fallback for non-structured response
+        return []
+
 # Utility functions
 def serialize_dataclass(obj) -> Union[Dict[str, Any], List[Any], Any]:
     """Serialize a dataclass to dictionary"""
@@ -166,3 +182,29 @@ def validate_action_type(action_type: str) -> bool:
 def validate_app_mode(mode: str) -> bool:
     """Validate if app mode is supported"""
     return mode in ["sheep", "youtube", "conversational", "visual_story", "zzz"]
+
+
+# Pydantic models for structured LLM output (if pydantic is available)
+if BaseModel:
+    class LLMActionOutput(BaseModel):
+        """Pydantic model for a single LLM action output - matches OutgoingAction structure"""
+        action: ActionType
+        data: Dict[str, Any]
+        
+        class Config:
+            extra = "forbid"  # Don't allow extra fields
+    
+    class LLMResponse_Structured(BaseModel):
+        """Pydantic model for structured LLM response with multiple actions"""
+        actions: List[LLMActionOutput]
+        new_mode: Optional[AppMode] = None
+        context_updates: Dict[str, Any] = {}
+        confidence: Optional[float] = None
+        reasoning: Optional[str] = None
+        
+        class Config:
+            extra = "forbid"  # Don't allow extra fields
+else:
+    # If BaseModel is not available, set to None
+    LLMActionOutput = None
+    LLMResponse_Structured = None
