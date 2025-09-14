@@ -288,8 +288,12 @@ class AgentWebSocket:
                     video = search_results['entries'][0]
                     
                     if video and video.get('id'):
+                        # Convert to embed URL with autoplay and no mute
+                        video_id = video.get('id')
+                        embed_url = f"https://www.youtube.com/embed/{video_id}?mute=0&autoplay=1"
+                        
                         video_data = {
-                            'video_url': video.get('webpage_url') or f"https://youtube.com/watch?v={video.get('id')}",
+                            'video_url': embed_url,
                             'title': video.get('title'),
                             'duration': video.get('duration_string') or str(video.get('duration', 'Unknown')),
                             'channel': video.get('uploader') or video.get('channel'),
@@ -334,10 +338,14 @@ class AgentWebSocket:
                     music = search_results['entries'][0]
                     
                     if music and music.get('id'):
+                        # Convert to embed URL with autoplay and no mute
+                        music_id = music.get('id')
+                        embed_url = f"https://www.youtube.com/embed/{music_id}?mute=0&autoplay=1"
+                        
                         music_data = {
                             'song_title': music.get('title'),
                             'artist': music.get('uploader') or music.get('channel'),
-                            'video_url': music.get('webpage_url') or f"https://youtube.com/watch?v={music.get('id')}",
+                            'video_url': embed_url,
                             'duration': music.get('duration_string') or str(music.get('duration', 'Unknown')),
                             'thumbnail': music.get('thumbnail')
                         }
