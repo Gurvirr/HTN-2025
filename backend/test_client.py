@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional
 class TestClient:
     """Test client for connecting to and testing the AgentWebSocket server"""
 
-    def __init__(self, host: str = "localhost", port: int = 5000):
+    def __init__(self, host: str = "localhost", port: int = 5069):
         self.host = host
         self.port = port
         self.url = f"ws://{host}:{port}"

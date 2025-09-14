@@ -770,7 +770,7 @@ BEHAVIOR:
             await self._send_action(sid, action)
 
     async def _send_action(self, sid: str, action: OutgoingAction) -> None:
-        """Send a single action to the glasses"""
+        """Send a single action to all connected clients"""
         try:
             # Add to command history
             command = CommandHistory(
@@ -781,12 +781,12 @@ BEHAVIOR:
             )
             self.app_state.command_history.append(command)
 
-            # Send the action
+            # Send the action to ALL connected clients
             action_dict = serialize_dataclass(action)
             action_dict['type'] = action.action
-            await self.send_to_client(sid, action_dict)
+            await self.broadcast_to_all(action_dict)
 
-            logger.info(f"📤 WEBSOCKET SEND → {sid}: {action.action} | Data: {action_dict}")
+            logger.info(f"📤 WEBSOCKET BROADCAST → ALL CLIENTS: {action.action} | Data: {action_dict}")
 
         except Exception as e:
             logger.error(f"Error sending action {action.action}: {e}")
