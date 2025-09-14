@@ -51,7 +51,7 @@ class AgentWebSocket:
     AVAILABLE_ACTIONS: list[ActionType] = ["tts", "play_song", "play_video", "create_visual", "change_mode", "acknowledge", "config_send"]
     AVAILABLE_MODES: list[AppMode] = ["sheep", "youtube", "conversational", "visual_story", "zzz"]
 
-    def __init__(self, host: str = "0.0.0.0", port: int = 5000) -> None:
+    def __init__(self, host: str = "0.0.0.0", port: int = 5069) -> None:
         self.host = host
         self.port = port
         self.app_state = AppState()
