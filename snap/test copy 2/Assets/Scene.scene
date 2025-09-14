@@ -8,11 +8,11 @@
     - !<own> 92813120-611c-4117-b0e9-9d70ba268f28
     - !<own> 100c23cb-d32e-41de-a911-395c8fc724c1
     - !<own> b52f2810-144b-4673-8a2c-ad45c0599d97
-    - !<own> db14ecc7-49d1-4c12-bc66-976cb17da86a
     - !<own> f0eed93e-6ee5-468f-baad-d029e8d8fe7c
     - !<own> e5719710-f2ce-46a0-847e-2b5cf6162934
     - !<own> 68729008-4e25-4715-807a-251a8ef7d798
     - !<own> 230648ab-5a8e-4074-a915-3b2b5c82202c
+    - !<own> 0c4af507-aa48-47de-97d1-796ec0a5711e
   layers: !<Layers/267ee9a7-aff2-4f9d-9a49-f71214747d03>
     userLayers:
       []
@@ -906,6 +906,21 @@
   BlendNormals: false
   BlendShapes:
     {}
+- !<SceneObject/0c4af507-aa48-47de-97d1-796ec0a5711e>
+  PrefabRemaps:
+    []
+  Name: JavaScript
+  Enabled: true
+  Layers: 1
+  LocalTransform: !<TransformEntity>
+    Position: {x: 0.000000, y: 0.000000, z: 0.000000}
+    Rotation: {x: 0.000000, y: 0.000000, z: 0.000000}
+    Scale: {x: 1.000000, y: 1.000000, z: 1.000000}
+    HasSegmentScaleCompensation: false
+  Children:
+    []
+  Components:
+    - !<own> edc745ef-04c7-4509-ae1a-622bed22672c
 - !<SceneObject/0cc8a3c1-a1da-47ef-80cc-c82a24857037>
   PrefabRemaps:
     []
@@ -4386,25 +4401,6 @@
   ScriptTypes:
     "":
       {}
-- !<Image/3e101265-5565-44f4-b9d4-43097862bfc5>
-  PrefabRemaps:
-    []
-  Name: Image
-  Enabled: true
-  RenderOrder: 0
-  StretchMode: Fit
-  VerticalAlignment: Center
-  HorizontalAlignment: Center
-  MeshShadowMode: None
-  ShadowColor: {x: 1.000000, y: 1.000000, z: 1.000000, w: 1.000000}
-  ShadowDensity: 1.000000
-  Materials:
-    - !<reference> 46687c81-ef6b-4565-86a1-0bd7f1c0321a
-  FlipX: false
-  FlipY: false
-  RotationAngle: 0
-  Pivot: {x: 0.000000, y: 0.000000}
-  ExtentsTarget: !<reference> 00000000-0000-0000-0000-000000000000
 - !<Canvas/3e4aa4aa-f400-47ba-b7ed-52912a01b0f6>
   PrefabRemaps:
     []
@@ -5711,7 +5707,7 @@
   PrefabRemaps:
     []
   Name: WebView
-  Enabled: true
+  Enabled: false
   ScriptAsset: !<reference> c3f0c1b7-3bcd-436a-9727-a725cf205970
   ScriptInputsDefault:
     resolution: true
@@ -10723,6 +10719,25 @@
   BlendNormals: true
   BlendShapes:
     Pinch: 0.000000
+- !<Image/a5dd59cf-c84e-4f63-8ff5-0754359ad683>
+  PrefabRemaps:
+    []
+  Name: Image
+  Enabled: true
+  RenderOrder: 0
+  StretchMode: Fit
+  VerticalAlignment: Center
+  HorizontalAlignment: Center
+  MeshShadowMode: None
+  ShadowColor: {x: 1.000000, y: 1.000000, z: 1.000000, w: 1.000000}
+  ShadowDensity: 1.000000
+  Materials:
+    - !<reference> 46687c81-ef6b-4565-86a1-0bd7f1c0321a
+  FlipX: false
+  FlipY: false
+  RotationAngle: 0
+  Pivot: {x: 0.000000, y: 0.000000}
+  ExtentsTarget: !<reference> 00000000-0000-0000-0000-000000000000
 - !<ScriptComponent/a603f51c-5860-4e4b-aaca-48d948bf2a45>
   PrefabRemaps:
     []
@@ -11959,6 +11974,8 @@
   Components:
     - !<own> 84fe9a8d-51fc-4ce6-a08b-fffa2471fe95
     - !<own> 551d09de-3351-45ea-aa72-5a6741a9458e
+    - !<own> a5dd59cf-c84e-4f63-8ff5-0754359ad683
+    - !<own> e60d8f3c-2d17-4d84-86fd-d52ba35b7585
 - !<ScriptComponent/b5839b35-a15d-4b7d-a4de-626cff2bf6e1>
   PrefabRemaps:
     []
@@ -14226,21 +14243,6 @@
     CapitalizationOverride: None
   DepthTest: false
   TwoSided: false
-- !<SceneObject/db14ecc7-49d1-4c12-bc66-976cb17da86a>
-  PrefabRemaps:
-    []
-  Name: Image
-  Enabled: true
-  Layers: 1
-  LocalTransform: !<TransformEntity>
-    Position: {x: 0.000000, y: 0.000000, z: -95.000000}
-    Rotation: {x: 0.000000, y: 0.000000, z: 0.000000}
-    Scale: {x: 100.000000, y: 100.000000, z: 32.000000}
-    HasSegmentScaleCompensation: false
-  Children:
-    []
-  Components:
-    - !<own> 3e101265-5565-44f4-b9d4-43097862bfc5
 - !<Skin/dbebaa3a-0e97-4718-b67b-5801ffb12230>
   PrefabRemaps:
     []
@@ -15030,6 +15032,24 @@
   ScriptTypes:
     "":
       {}
+- !<ScriptComponent/e60d8f3c-2d17-4d84-86fd-d52ba35b7585>
+  PrefabRemaps:
+    []
+  Name: webui_socket
+  Enabled: true
+  ScriptAsset: !<reference> d1f71980-88ad-4038-aa74-cd2eb1ec8948
+  ScriptInputsDefault:
+    {}
+  ScriptTypesDefault:
+    {}
+  ScriptInputs:
+    "":
+      internetModule: !<reference.InternetModule> c8a72bd5-ae0f-4f6d-b5c6-9d50b5971edf
+      image: !<reference.Image> 84fe9a8d-51fc-4ce6-a08b-fffa2471fe95
+      texture: !<reference.Texture> 58ae943c-af06-4e72-a307-7e6f9eedf494
+  ScriptTypes:
+    "":
+      {}
 - !<BodyComponent/e62b2725-a194-4e7e-9460-edfa11545373>
   PrefabRemaps:
     []
@@ -15532,6 +15552,22 @@
     - !<own> 80613e75-e919-4a7a-aab7-96b9fdd0568f
   Components:
     []
+- !<ScriptComponent/edc745ef-04c7-4509-ae1a-622bed22672c>
+  PrefabRemaps:
+    []
+  Name: Untitled JavaScript 2
+  Enabled: true
+  ScriptAsset: !<reference> 345a222b-168e-42d7-bb08-f7fed0ecab01
+  ScriptInputsDefault:
+    internetModule: true
+  ScriptTypesDefault:
+    {}
+  ScriptInputs:
+    "":
+      internetModule: !<reference.InternetModule> c8a72bd5-ae0f-4f6d-b5c6-9d50b5971edf
+  ScriptTypes:
+    "":
+      {}
 - !<SceneObject/ee20c7e1-421e-4ab2-aef6-553a0f58521b>
   PrefabRemaps:
     []

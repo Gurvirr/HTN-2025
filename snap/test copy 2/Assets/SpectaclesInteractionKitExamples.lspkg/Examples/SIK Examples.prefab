@@ -5796,7 +5796,7 @@
   BlendShapesEnabled: true
   BlendNormals: false
   BlendShapes:
-    Size: 0.660000
+    Size: 0.000000
 - !<ScreenTransform/7d8c25f4-878f-4092-a22a-7e6bdaa001f6>
   PrefabRemaps:
     []

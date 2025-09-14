@@ -17,7 +17,7 @@ viewConfig:
     viewport: Maximized
     output: Live
     stereoOutputEye: Center
-    deviceTypeOverride: Spectacles
+    deviceTypeOverride: Unknown
     tint: true
     screenshot: false
     videoScreenRecord: false

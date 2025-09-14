@@ -1254,7 +1254,7 @@
   BlendShapesEnabled: true
   BlendNormals: false
   BlendShapes:
-    Size: 0.660000
+    Size: 0.000000
 - !<Text/1acd9a1e-d629-4ef4-b6aa-41e8f058cef7>
   PrefabRemaps:
     []
