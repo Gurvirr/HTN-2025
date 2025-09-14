@@ -2,6 +2,7 @@ import socketio
 import asyncio
 import json
 import time
+from datetime import datetime
 from typing import Dict, Any
 
 class TestClient:
@@ -22,45 +23,61 @@ class TestClient:
 
         @self.sio.event
         async def connect():
-            print(f"✅ Connected to server at {self.url}")
+            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+            print(f"[{timestamp}] 📥 SOCKET RECV: connect | Connected to server at {self.url}")
             self.connected = True
 
         @self.sio.event
         async def disconnect():
-            print("❌ Disconnected from server")
+            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+            print(f"[{timestamp}] 📥 SOCKET RECV: disconnect | Disconnected from server")
             self.connected = False
 
         @self.sio.event
         async def connection_status(data):
-            print(f"📡 Connection status: {data}")
+            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+            print(f"[{timestamp}] 📥 SOCKET RECV: connection_status | {data}")
 
         @self.sio.event
         async def mode_changed(data):
-            print(f"🔄 Mode changed: {data}")
+            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+            print(f"[{timestamp}] 📥 SOCKET RECV: mode_changed | {data}")
 
         @self.sio.event
         async def tts(data):
-            print(f"🗣️  TTS: {data}")
+            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+            print(f"[{timestamp}] 📥 SOCKET RECV: tts | Speech: \"{data.get('data', {}).get('speech', 'N/A')}\"")
 
         @self.sio.event
         async def play_song(data):
-            print(f"🎵 Play Song: {data}")
+            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+            song_title = data.get('data', {}).get('song_title', 'N/A')
+            print(f"[{timestamp}] 📥 SOCKET RECV: play_song | Song: \"{song_title}\"")
 
         @self.sio.event
         async def play_video(data):
-            print(f"📺 Play Video: {data}")
+            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+            video_url = data.get('data', {}).get('video_url', 'N/A')
+            video_title = data.get('data', {}).get('title', 'N/A')
+            print(f"[{timestamp}] 📥 SOCKET RECV: play_video | Title: \"{video_title}\" | URL: {video_url}")
 
         @self.sio.event
         async def create_visual(data):
-            print(f"🎨 Create Visual: {data}")
+            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+            prompt = data.get('data', {}).get('visual_prompt', 'N/A')
+            print(f"[{timestamp}] 📥 SOCKET RECV: create_visual | Prompt: \"{prompt}\"")
 
         @self.sio.event
-        async def acknowledged(data):
-            print(f"✅ Acknowledged: {data}")
+        async def acknowledge(data):
+            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+            message = data.get('data', {}).get('message', 'N/A')
+            print(f"[{timestamp}] 📥 SOCKET RECV: acknowledge | Message: \"{message}\"")
 
         @self.sio.event
         async def error(data):
-            print(f"❌ Error: {data}")
+            timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+            error_msg = data.get('data', {}).get('error_message', 'N/A')
+            print(f"[{timestamp}] 📥 SOCKET RECV: error | Error: \"{error_msg}\"")
 
     async def connect_to_server(self):
         """Connect to the AgentSocket server"""
@@ -87,7 +104,8 @@ class TestClient:
         if mode:
             data["mode"] = mode
 
-        print(f"🎤 Sending speech: '{speech_text}'")
+        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        print(f"[{timestamp}] 📤 CLIENT SEND: receive_speech | Speech: \"{speech_text}\"")
         await self.sio.emit("receive_speech", data)
 
     async def send_done_command(self, command_id: str, status: str = "completed"):
@@ -102,7 +120,8 @@ class TestClient:
             "execution_time": 1.5
         }
 
-        print(f"✅ Sending done_command: {command_id} - {status}")
+        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        print(f"[{timestamp}] 📤 CLIENT SEND: done_command | Command: {command_id} - {status}")
         await self.sio.emit("done_command", data)
 
     async def send_done_story(self, story_id: str, duration: float = None):
@@ -117,7 +136,8 @@ class TestClient:
             "user_engagement": "high"
         }
 
-        print(f"📖 Sending done_story: {story_id}")
+        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        print(f"[{timestamp}] 📤 CLIENT SEND: done_story | Story: {story_id}")
         await self.sio.emit("done_story", data)
 
     async def run_test_sequence(self):

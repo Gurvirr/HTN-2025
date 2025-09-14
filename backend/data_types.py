@@ -11,7 +11,8 @@ except ImportError:
 MessageType = Literal[
     "receive_speech",
     "done_command",
-    "done_story"
+    "done_story",
+    "config_send" # sends config to glasses
 ]
 
 # Action Types that can be sent to glasses
@@ -22,7 +23,8 @@ ActionType = Literal[
     "create_visual",
     "change_mode",
     "acknowledge",
-    "error"
+    "error",
+    "config_send",
 ]
 
 # App Modes
@@ -63,6 +65,14 @@ class CommandHistory:
     response_time: Optional[float] = None
 
 @dataclass
+class Config:
+    """Configuration structure for TTS and other settings"""
+    config_type: str = "tts"
+    voice_type: str = "default"
+    volume: float = 1.0
+    closed_captions: bool = False
+
+@dataclass
 class UserPreferences:
     """User preferences and settings"""
     voice_type: str = "default"
@@ -78,6 +88,7 @@ class AppState:
     current_mode: AppMode = "conversational"
     command_history: List[CommandHistory] = field(default_factory=list)
     user_preferences: UserPreferences = field(default_factory=UserPreferences)
+    config: Config = field(default_factory=Config)
     active_session_id: Optional[str] = None
     last_activity: str = field(default_factory=lambda: datetime.now().isoformat())
     context_memory: Dict[str, Any] = field(default_factory=dict)
@@ -126,13 +137,38 @@ def create_action(action_type: ActionType, **data) -> OutgoingAction:
     )
 
 # Convenience functions for common actions
-def create_tts_action(speech: str, voice_type: Optional[str] = None, speed: Optional[float] = None, volume: Optional[float] = None) -> OutgoingAction:
+def create_tts_action(speech: str, voice_type: Optional[str] = None, speed: Optional[float] = None, volume: Optional[float] = None, closed_captions: Optional[bool] = None) -> OutgoingAction:
     """Create a TTS action"""
-    return create_action("tts", speech=speech, voice_type=voice_type, speed=speed, volume=volume)
+    return create_action("tts", speech=speech, voice_type=voice_type, speed=speed, volume=volume, closed_captions=closed_captions)
 
-def create_play_song_action(song_title: str, artist: Optional[str] = None, playlist: Optional[str] = None, volume: Optional[float] = None) -> OutgoingAction:
+def create_tts_with_config(speech: str, config: Config) -> OutgoingAction:
+    """Create a TTS action using a specific config"""
+    return create_action("tts", 
+                        speech=speech,
+                        voice_type=config.voice_type,
+                        volume=config.volume,
+                        closed_captions=config.closed_captions)
+
+def create_config_action(config: Config) -> OutgoingAction:
+    """Create a config send action"""
+    return create_action("config_send", 
+                        config_type=config.config_type,
+                        voice_type=config.voice_type, 
+                        volume=config.volume,
+                        closed_captions=config.closed_captions)
+
+def update_config(current_config: Config, **updates) -> Config:
+    """Update config with new values"""
+    return Config(
+        config_type=updates.get('config_type', current_config.config_type),
+        voice_type=updates.get('voice_type', current_config.voice_type),
+        volume=updates.get('volume', current_config.volume),
+        closed_captions=updates.get('closed_captions', current_config.closed_captions)
+    )
+
+def create_play_song_action(song_title: str, artist: Optional[str] = None, playlist: Optional[str] = None, volume: Optional[float] = None, video_url: Optional[str] = None) -> OutgoingAction:
     """Create a play song action"""
-    return create_action("play_song", song_title=song_title, artist=artist, playlist=playlist, volume=volume)
+    return create_action("play_song", song_title=song_title, artist=artist, playlist=playlist, volume=volume, video_url=video_url)
 
 def create_play_video_action(video_url: str, title: Optional[str] = None, duration: Optional[int] = None, quality: Optional[str] = None) -> OutgoingAction:
     """Create a play video action"""
@@ -173,11 +209,11 @@ def serialize_dataclass(obj) -> Union[Dict[str, Any], List[Any], Any]:
 
 def validate_message_type(message_type: str) -> bool:
     """Validate if message type is supported"""
-    return message_type in ["receive_speech", "done_command", "done_story"]
+    return message_type in ["receive_speech", "done_command", "done_story", "config_send"]
 
 def validate_action_type(action_type: str) -> bool:
     """Validate if action type is supported"""
-    return action_type in ["tts", "play_song", "play_video", "create_visual", "change_mode", "acknowledge", "error"]
+    return action_type in ["tts", "play_song", "play_video", "create_visual", "change_mode", "acknowledge", "error", "config_send"]
 
 def validate_app_mode(mode: str) -> bool:
     """Validate if app mode is supported"""
@@ -204,7 +240,17 @@ if BaseModel:
         
         class Config:
             extra = "forbid"  # Don't allow extra fields
+    class ContextEnhancementDecision(BaseModel):
+        """Pydantic model for context enhancement decision"""
+        should_enhance: bool
+        enhancement_type: Optional[str] = None  # e.g., "youtube", "music", "visual", etc.
+        search_query: Optional[str] = None  # refined search query (max 20 tokens)
+        
+        class Config:
+            extra = "forbid"
+
 else:
     # If BaseModel is not available, set to None
     LLMActionOutput = None
     LLMResponse_Structured = None
+    ContextEnhancementDecision = None

@@ -18,7 +18,9 @@ sounddevice==0.4.6
 soundfile==0.12.1
 webrtcvad-wheels
 
-# Optional: If you plan to add AI/ML integration
+# AI/ML integration
+groq
+yt-dlp
 # openai==1.3.7
 # anthropic==0.7.8
 
